@@ -1,109 +1,117 @@
 import java.io.File;
-import java.io.BufferedReader;
-import java.io.InputStream;
-import java.io.InputStreamReader;
+import javax.tools.*;
+import java.util.*;
 
 import java.lang.reflect.Method;
-import java.lang.reflect.Field;
-import java.lang.reflect.Constructor;
 import java.lang.Object;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
+class Handle {
+  Class<?> obj;
 
-class Handle{
-  Class obj;
-
-  Handle(Class obj){
+  Handle(Class<?> obj) {
     this.obj = obj;
   }
 
-  public Class getHandle(){
+  public Class<?> getHandle() {
     return obj;
   }
 }
 
-public class bootstrap{
-  private static void runProcess(String command) throws Exception {
-    Process pro = Runtime.getRuntime().exec(command);
-    printLines(command + " stdout:", pro.getInputStream());
-    printLines(command + " stderr:", pro.getErrorStream());
-    pro.waitFor();
-    System.out.println(command + " exitValue() " + pro.exitValue());
-  }
+public class bootstrap {
+  public static void callFunction(Handle handle, String functionName) {
+    Class<?> c = handle.getHandle();
 
-  private static void printLines(String cmd, InputStream ins) throws Exception {
-    String line = null;
-    BufferedReader in = new BufferedReader(new InputStreamReader(ins));
-    
-    while ((line = in.readLine()) != null) {
-      System.out.println(cmd + " " + line);
+    try {
+      Method m = c.getDeclaredMethod(functionName, new Class[] { String[].class }); // (name, parameters)
+      m.invoke(null, new Object[] { null });
+
+    } catch (Exception e) {
+      System.err.println("CallFunction" + e);
     }
   }
 
-  public static Handle loadFromFile(String[] paths) { 
+  public static Handle[] loadFromFile(String[] paths) {
     // load all scripts and store them into a Handle class, then return it
+    Handle[] handleArray = new Handle[paths.length];
 
-    for(int i=0; i<paths.length; i++){
-      System.out.println("Path provided"+ paths[i]);
+    for (int i = 0; i < paths.length; i++) {
+      System.out.println("Path provided " + paths[i]);
 
       try {
-        File f = new File(paths[i]);
-        Path path  = Paths.get(f.getCanonicalPath());
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        DiagnosticCollector<JavaFileObject> ds = new DiagnosticCollector<>();
+        StandardJavaFileManager mgr = compiler.getStandardFileManager(ds, null, null);
+        Iterable<String> classOutputPath = Arrays.asList(new String[] { "-d", "." });
 
-        if(Files.exists(path)){
-          System.out.println("File Resolved!");
-          String cmd = "javac " + path.toAbsolutePath();
-          runProcess(cmd);
+        File file1 = new File(paths[i]);
+        Iterable<? extends JavaFileObject> sources = mgr.getJavaFileObjectsFromFiles(Arrays.asList(file1));
+        JavaCompiler.CompilationTask task = compiler.getTask(null, mgr, ds, classOutputPath, null, sources);
+        Boolean call = task.call(); // main method to compile the file into class
 
+        if (call) {
+          System.out.println("Compilation Successful");
+          Path path = Paths.get(file1.getCanonicalPath());
           String classname = path.getFileName().toString().split(".java")[0];
 
-          Class c = Class.forName(classname);
+          handleArray[i] = new Handle(Class.forName(classname));
 
-          return new Handle(c);
+        } else {
+          System.out.println("Compilation Failed");
+          handleArray[i] = null;
         }
-        else{
-          System.out.println("ERROR!");
+
+        for (Diagnostic<? extends JavaFileObject> d : ds.getDiagnostics()) { // diagnostic error printing
+          System.out.format("Line: %d, %s in %s", d.getLineNumber(), d.getMessage(null), d.getSource().getName());
         }
-        
-      }
-      catch (Exception e) {
-        System.err.println(e);
+
+        mgr.close();
+        System.out.print("\n");
+
+      } catch (Exception e) {
+        System.err.println("Load Function" + e);
       }
     }
 
-    return null;
+    return handleArray;
   }
 
-  public static void DiscoverData(Handle handle) { 
-    // for each loaded .java file in the Handle list, get the DiscoverData, which is another class with the list of classes and methods etc
-    Class hClass = handle.getHandle();
+  public static void DiscoverData(Handle handle) {
+    // for each loaded .java file in the Handle list, get the DiscoverData, which is
+    // another class with the list of classes and methods etc
+    Class<?> hClass = handle.getHandle();
 
-    System.out.println("ClassName: " + hClass.getName() + "\n");
+    System.out.println("ClassName: " + hClass.getName());
 
-    Method[] methods = hClass.getMethods();
+    Method[] methods = hClass.getDeclaredMethods();
 
     for (Method method : methods) {
       System.out.println("Name of the method: " + method.getName());
 
-      Class[] parameters = method.getParameterTypes();
-
-      for(Class parameter : parameters){
-        System.out.println("\t parameter: " + parameter.getName());
+      Class<?>[] parameters = method.getParameterTypes();
+      if (parameters.length == 0)
+        System.out.println("\tparameter: none");
+      for (Class<?> parameter : parameters) {
+        System.out.println("\tparameter: " + parameter.getSimpleName());
       }
-      System.out.println("\t Return Type: " + method.getReturnType() + "\n");
+      System.out.println("\tReturn Type: " + method.getReturnType() + "\n");
 
     }
   }
 
-  public static void main(String[] args){
-    String[] path = new String[1];
+  public static void main(String[] args) {
+    String[] path = new String[2];
     path[0] = "./test.java";
+    path[1] = "../test1.java";
 
-    Handle handle = loadFromFile(path);
+    Handle[] handleArr = loadFromFile(path);
 
-    DiscoverData(handle);
+    for (Handle curHandle : handleArr) { // iteration over the handle class
+      System.out.println("\n******************************");
+      DiscoverData(curHandle);
+      callFunction(curHandle, "main");
+    }
   }
 }
