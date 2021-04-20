@@ -9,23 +9,35 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 
 class Handle {
-  Class<?> obj;
+  HashMap<String, Class<?>> handleMap = new HashMap<String, Class<?>>();
 
-  Handle(Class<?> obj) {
-    this.obj = obj;
+  public void addClass(String name, Class<?> classObj) {
+    handleMap.put(name, classObj);
   }
 
-  public Class<?> getHandle() {
-    return obj;
+  public Class<?> getClassFromName(String name) {
+    return handleMap.get(name);
+  }
+
+  public String[] getStringArray() {
+    String[] strArr = new String[handleMap.size()];
+    int i = 0;
+    for (Map.Entry<String, Class<?>> handle : handleMap.entrySet()) {
+      strArr[i++] = handle.getKey();
+    }
+
+    return strArr;
   }
 }
 
 public class bootstrap {
-  public static void callFunction(Handle handle, String functionName) {
-    Class<?> c = handle.getHandle();
+  private static Handle handleArray = new Handle(); // Global Handle Class to store classes and names
+
+  public static void callFunction(String classname, String functionName) {
+    Class<?> c = handleArray.getClassFromName(classname);
 
     try {
-      Method m = c.getDeclaredMethod(functionName, new Class[] { String[].class }); // (name, parameters)
+      Method m = c.getDeclaredMethod(functionName, new Class[] { String[].class });
       m.invoke(null, new Object[] { null });
 
     } catch (Exception e) {
@@ -33,10 +45,8 @@ public class bootstrap {
     }
   }
 
-  public static Handle[] loadFromFile(String[] paths) {
+  public static String[] loadFromFile(String[] paths) {
     // load all scripts and store them into a Handle class, then return it
-    Handle[] handleArray = new Handle[paths.length];
-
     for (int i = 0; i < paths.length; i++) {
       System.out.println("Path provided " + paths[i]);
 
@@ -56,11 +66,9 @@ public class bootstrap {
           Path path = Paths.get(file1.getCanonicalPath());
           String classname = path.getFileName().toString().split(".java")[0];
 
-          handleArray[i] = new Handle(Class.forName(classname));
-
+          handleArray.addClass(classname, Class.forName(classname));
         } else {
           System.out.println("Compilation Failed");
-          handleArray[i] = null;
         }
 
         for (Diagnostic<? extends JavaFileObject> d : ds.getDiagnostics()) { // diagnostic error printing
@@ -75,13 +83,13 @@ public class bootstrap {
       }
     }
 
-    return handleArray;
+    return handleArray.getStringArray();
   }
 
-  public static void DiscoverData(Handle handle) {
+  public static void DiscoverData(String classname) {
     // for each loaded .java file in the Handle list, get the DiscoverData, which is
     // another class with the list of classes and methods etc
-    Class<?> hClass = handle.getHandle();
+    Class<?> hClass = handleArray.getClassFromName(classname);
 
     System.out.println("ClassName: " + hClass.getName());
 
@@ -103,15 +111,15 @@ public class bootstrap {
 
   public static void main(String[] args) {
     String[] path = new String[2];
-    path[0] = "./test.java";
-    path[1] = "../test1.java";
+    path[0] = "./Test.java";
+    path[1] = "../Test1.java";
 
-    Handle[] handleArr = loadFromFile(path);
+    String[] handleArr = loadFromFile(path);
 
-    for (Handle curHandle : handleArr) { // iteration over the handle class
+    for (String s : handleArr) {
       System.out.println("\n******************************");
-      DiscoverData(curHandle);
-      callFunction(curHandle, "main");
+      DiscoverData(s);
+      callFunction(s, "main");
     }
   }
 }
